@@ -20,11 +20,21 @@ defaultServer = 'euw1'
 # The 429 status code indicates that the user has sent too many requests
 # in a given amount of time ("rate limiting").
 
-print(db.keys())
+# discordTag always refers to the name#1234 format
+# discordUID is a long series of numbers that unqiuely identify every discord user (If they change their nickname and number this can still identify them)
+
+#################
+###### TODO #####
+# Re add owner and admin authentication methods
+# Clear print statements
+# Add update player functionality
+# Clean up docs
+# Add team-builder functionality
+# Add summoner lookup
 
 
 def linear_search(arr, key, val):
-    """Perform a search over arr for a given key, value pair"""
+    """Perform a search over arr of dicts for a given (key, value) pair"""
     # Small server so linear search is fine
     for i in range(len(arr)):
         if arr[i][key] == val:
@@ -32,52 +42,64 @@ def linear_search(arr, key, val):
     return -1
 
 def appendToDB(key, val):
+    """Append a given value to the database, stored under the given key"""
     temp = db[key]
     temp.append(val)
     db[key] = temp
     
 def owner_authorized(discordTag):
     """Return true if a given discordTag is in botOwners I.E. has owner permissions"""
-    #if discordTag in db["botOwners"]:
+    #if linear_search(db["botOwners"], 'discordUID', discordUID) != -1:
     #    return True
     #return False
     return True
 
-def add_owner(discordTag):
+def add_owner(discordTag, discordUID):
     """Add given discordTag to bot Owners"""
+    newOwner = {
+        'discordTag': discordTag,
+        'discordUID': discordUID
+    }
     if "botOwners" in db.keys():
-        if discordTag not in db["botOwners"]:
-            appendToDB("botOwners", discordTag)
+        if linear_search(db["botOwners"], 'discordUID', discordUID) == -1:
+            appendToDB("botOwners", newOwner)
         else:  
             return "Already an owner."
     else:
-        db["botOwners"] = [discordTag]
+        db["botOwners"] = [newOwner]
     return "Successfully added " + discordTag[:-5] +  "'s owner status."
     
 def admin_authorized(discordTag):
     """Return true if a given discordTag is in botAdmins I.E. has admin permissions"""
-    #if discordTag in db["botAdmins"]:
+    #if linear_search(db["botAdmins"], 'discordUID', discordUID) != -1:
     #    return True
     #return False
     return True
 
-def add_admin(discordTag):
+def add_admin(discordTag, discordUID):
+    """Add a new admin"""
+    
+    newAdmin = {
+            'discordTag': discordTag,
+            'discordUID': discordUID
+            }
     if "botAdmins" in db.keys():
-        if discordTag not in db["botAdmins"]:
-            appendToDB("botAdmins", discordTag)
+        if linear_search(db["botAdmins"], 'discordUID', discordUID) == -1:
+            appendToDB("botAdmins", newAdmin)
         else:
             return "Already an admin."
     else:
-        db["botAdmins"] = [discordTag]
-    
+        db["botAdmins"] = [newAdmin]
     return "Successfully added " + discordTag[:-5] +  " as an admin."
 
 def remove_admin(discordTag):
     """Remove the given discordTag from the admins list"""
-    if "botAdmins" in db.keys():
-        if discordTag in db["botAdmins"]:
+    
+    if "botAdmins" in db.keys() and len(db["botAdmins"]) != 0:
+        loc = linear_search(db["botAdmins"], 'discordTag', discordTag)
+        if loc != -1:
             temp = db["botAdmins"]
-            temp.remove(discordTag)
+            temp.pop(loc)
             db["botAdmins"] = temp
             return "Successfully removed " + discordTag[:-5] +  "'s admin status."
         return "Can't find an admin by that name"
@@ -92,28 +114,29 @@ def player_toString(index):
     # Avoiding division by 0 
     if p['clashGames'] == 0:
         winRate = -1
-        #outString = players[index]['discordTag'] + " goes by " + players[index]['summonerName'] + " and has not played any games yet."
+        outString = p['discordTag'] + " goes by " + p['summonerName'] + " and has not played any games yet."
     else:
         winRate = round(100 * p['clashWins']/p['clashGames'], 2)
-        #outString = p['discordTag'] + " goes by " + p['summonerName'] + " and has a " + winRate + "% win rate accross " + p['clashGames'] " games.".
+        outString = p['discordTag'] + " goes by " + p['summonerName'] + " and has a " + winRate + "% win rate accross " + p['clashGames'] + " games."
     return outString
 
-def register_player(summonerName, discordTag):
-    print(discordTag)
+def register_player(summonerName, discordTag, discordUID):
+    
     """Register a new player with given summoner name and discord tag"""
+    
     player = {
             'discordTag': discordTag,
+            'discordUID': discordUID,
             'summonerName': summonerName,
             'server': defaultServer,
             'clashHistory': [], # List of indexes in pastClashes
             'clashWins': 0, # Total games won in clash  (will be used for team balancing feature)
             'clashGames': 0
             }
-    print(db.keys())
     if "players" in db.keys():
-        newID = len(db["players"]) + 1
-        player[id] = newID
-        if linear_search(db["players"], 'discordTag', discordTag) == -1: 
+        newID = len(db["players"])
+        player['id'] = newID
+        if linear_search(db["players"], 'discordUID', discordUID) == -1: 
             appendToDB("players", player)
         else:
             return "Player already exists."
@@ -124,7 +147,7 @@ def register_player(summonerName, discordTag):
         
 def remove_player(summonerName):
     """Remove a player from the players list"""
-    if "players" in db.keys():
+    if "players" in db.keys() and len(db["players"]) != 0:
         loc = linear_search(db["players"], 'summonerName', summonerName)
         if loc == -1:
             return "Cant find a player with that summoner name"
@@ -137,6 +160,8 @@ def remove_player(summonerName):
 
 def print_player(name):
     """Search for a player by name and return a string describing their profile or -1 if not found"""
+    if "players" not in db.keys():
+        return "No players in database, try adding some first"
     locDiscord = linear_search(db["players"], 'discordTag', name)
     if locDiscord != -1:
         return player_toString(locDiscord)
@@ -196,15 +221,53 @@ def send_incorrect_format(format):
 
 def not_authorized(authority):
     return "You are not authorized to do that. Please contact an {} if you think you should be.".format(authority)
+
+def clear_owners_and_admins():
+    try:
+        db.__delitem__("botOwners")
+        print("Deleted Owners")
+    except:
+        print("Already Deleted Owners")
     
+    try:
+        db.__delitem__("botAdmins")
+        print("Deleted Admins")
+    except:
+        print("Already Deleted Admins")
+    
+def clear_all():
+    clear_owners_and_admins()
+    try:
+        db.__delitem__("players")
+        print("Deleted Players")
+    except:
+        print("Already Deleted Players")
+
+    try:
+        db.__delitem__("pastClashes")
+        print("Deleted Past Clashes")
+    except:
+        print("Already Deleted Past Clashes")
+
+    try:
+        db.__delitem__("currentClashes")
+        print("Deleted Current Clashes")
+    except:
+        print("Already Deleted Current Clashes")
+
+    try:
+        db.__delitem__("serverClashes")
+        print("Deleted Server Clashes ")
+    except:
+        print("Already Deleted Server Clashes")
+
+
 @client.event
 async def on_ready():
     print('We have logged in as {0.user}'.format(client))
 
 @client.event
 async def on_message(message):
-
-    #print(db["players"])
     if message.author == client.user:
         # If the bot sends a message don't analyze it
         return
@@ -228,10 +291,11 @@ async def on_message(message):
         # TODO: Link with discords league intergration, loop through server and autoadd
         # $register summonerName
         summonerName = msgDetails[1]
-        discordTag = message.author
+        discordTag = str(message.author)
+        discordUID = message.author.id
         if len(msgDetails) == 2:
             # Adds a new player
-            await message.channel.send(register_player(summonerName, discordTag))
+            await message.channel.send(register_player(summonerName, discordTag, discordUID))
         else:
             await message.channel.send("Please use the following format: '$register summonerName'")
 
@@ -242,8 +306,8 @@ async def on_message(message):
         if len(msgDetails) == 2:
             nameToRemove = msgDetails[1]
             if nameToRemove == 'me':
-                nameToRemove = message.author
-            if admin_authorized(message.author) or nameToRemove == message.author:
+                nameToRemove = str(message.author)
+            if admin_authorized(message.author) or nameToRemove == str(message.author):
                 await message.channel.send(remove_player(nameToRemove))
             else:
                 await message.channel.send(not_authorized('admin'))
@@ -254,46 +318,46 @@ async def on_message(message):
         # Grants a specified user admin
         # $admin discordTag
         if len(msgDetails) == 2:
-            if len(message.mentions != 0):
-                discordTag = message.mentions[0].name
-            else:
-                discordTag = msgDetails[1]
-            if admin_authorized(message.author):
-                
-                await message.channel.send(add_admin(discordTag))
-            else:
-                await message.channel.send(not_authorized('admin'))
+            if len(message.mentions) != 0:
+                discordTag = str(message.mentions[0])
+                discordUID = message.mentions[0].id
+                if admin_authorized(message.author.id):
+                    await message.channel.send(add_admin(discordTag, discordUID))
+                else:
+                    await message.channel.send(not_authorized('admin'))
         else:
-            await message.channel.send("Please use the following format: '$admin discordTag'")
+            await message.channel.send("Please use the following format: '$admin @discordUser'")
             
     if msg.startswith("$de-admin"):
         # Removes admin from a specified discord user
         # de-admin discordTag
         # de-admin me
         if len(msgDetails) == 2:
-            if len(message.mentions != 0):
-                discordTag = message.mentions[0].name
-            else:
-                discordTag = msgDetails[1]
-            if discordTag == 'me':
-                discordTag = message.author
-            if owner_authorized(message.author):
-                
-                await message.channel.send(remove_admin(discordTag.name))
+            if len(message.mentions) != 0:
+                discordTag = str(message.mentions[0])
+            if msgDetails[1] == 'me':
+                discordTag = str(message.author)
+            if owner_authorized(message.author.id):
+                await message.channel.send(remove_admin(discordTag))
             else:
                 await message.channel.send(not_authorized('owner'))  
         else:
-            await message.channel.send("Please use the following format: '$de-admin discordTag'")
+            await message.channel.send("Please use the following format: '$de-admin @discordUser'")
             
     if msg.startswith("$player"):
         # Prints info about a player on the discord server
         # $player me
         # $player discordTag
         # $player summonerName
-        nameToSearchFor = msgDetails[1]
-        if nameToSearchFor == "me":
-            nameToSearchFor = message.author.name
-        await message.channel.send(print_player(nameToSearchFor))
+        if len(msgDetails) == 2:
+            nameToSearchFor = msgDetails[1]
+            if len(message.mentions) != 0:
+                nameToSearchFor = str(message.mentions[0])
+            if nameToSearchFor == "me":
+                nameToSearchFor = str(message.author)
+            await message.channel.send(print_player(nameToSearchFor))
+        else:
+            await message.channel.send("Please use the following formats: '$player @discordUser' or '$player summonerName' or '$player me'")
     
     if msg.startswith("$summoner"):
         # $summoner summonerName
@@ -302,16 +366,19 @@ async def on_message(message):
     if msg.startswith("$owner"):
         if len(msgDetails) == 2:
             if len(message.mentions) != 0:
-                discordTag = message.mentions[0].name + str(message.mentions[0].id)
-            else:   
-                discordTag = msgDetails[1]
-            if owner_authorized(message.author):
-                await message.channel.send(add_owner(discordTag))
-                
+                discordTag = str(message.mentions[0])
+                discordUID = message.mentions[0].id
+                if owner_authorized(str(message.author)):
+                    await message.channel.send(add_owner(discordTag, discordUID)) 
+                else:
+                    await message.channel.send(not_authorized('owner'))
             else:
-                await message.channel.send(not_authorized('owner')) 
+                await message.channel.send("Please mention the user: '$owner @discordUser'")     
         else:
-            await message.channel.send("Please use the following format: '$owner discordTag'")
+            await message.channel.send("Please use the following format: '$owner @discordUser'")
+    
+    if msg.startswith("$clear"):
+        clear_all()
                            
 keep_alive()
 client.run(os.environ['DTOKEN'])
