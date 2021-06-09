@@ -6,6 +6,7 @@ from replit import db
 from keep_alive import keep_alive
 from replit import db
 from datetime import datetime
+import asyncio
 
 client = discord.Client()
 
@@ -32,7 +33,6 @@ defaultServer = 'euw1'
 # Clean up docs
 # Add team-builder functionality
 # Add summoner lookup
-
 
 def linear_search(arr, key, val):
     """Perform a search over arr of dicts for a given (key, value) pair"""
@@ -184,15 +184,17 @@ def get_tournaments():
         else:
             raise
 
-def update_current_clashes(apiClashes):
+async def update_current_clashes(apiClashes):
     """Compare Riot's list of current clashes to ours and update accordingly"""
     # Check if our currentClashes is up to date with Riot's
+    newClashFlag = False
     if "currentClashes" not in db.keys():
         print("Current Clashes not in db")
         db['currentClashes'] = []
 
     for apiEvent in apiClashes:
         if not any(d['id'] == apiEvent['id'] for d in db["currentClashes"]):
+            newClashFlag = True
             item = {
                 'id': apiEvent['id'],
                 'themeId': apiEvent['themeId'],
@@ -202,9 +204,14 @@ def update_current_clashes(apiClashes):
                 'startTime': apiEvent['schedule'][0]['startTime'],
                 'cancelled': apiEvent['schedule'][0]['cancelled']
             }
+            clashDate = datetime.fromtimestamp(item['regTime']/1000.0).strftime('%d-%B')
+            titleString = "clash-" + clashDate
+            await make_channel(titleString)
+            print(f"Making channel {titleString}")
             appendToDB("currentClashes", item)
+    return newClashFlag
 
-def update_past_clashes(apiClashes):
+async def update_past_clashes(apiClashes):
     """Moves all old tournaments from currentClashes to pastClashes"""
     if "pastClashes" not in db.keys():
         db["pastClashes"] = []
@@ -217,11 +224,37 @@ def update_past_clashes(apiClashes):
             print("Moved to past clashes")
             db["pastClashes"].append(db["currentClashes"].pop(db["currentClashes"].index(c)))
 
-def update_clash_lists():
+async def make_channel(title):
+    server = client.guilds[0]
+    #print(server.id)
+    category = server.categories[1]
+    #print(category)
+    channel = await server.create_text_channel(title, category=category)
+    #print(channel)
+
+async def update_clash_lists():
     """Checks the Riot API for new tournaments, adds them accordingly and moves old ones"""
     apiClashes = get_tournaments()
-    update_current_clashes(apiClashes)
-    update_past_clashes(apiClashes)
+    if await update_current_clashes(apiClashes):
+        # Create new channels
+        pass
+    if await update_past_clashes(apiClashes):
+        # Remove old channels
+        pass
+
+async def update_clash_background_task():
+    """Every 500 seconds, check for new clash tournaments"""
+    await client.wait_until_ready()
+
+    while not client.is_closed():
+        try:
+            await update_clash_lists()
+            now = datetime.now()
+            print(now)
+            await asyncio.sleep(500)
+        except Exception as e:
+            print(str(e))
+            await asyncio.sleep(500)
 
 def send_incorrect_format(format):
     # Based on format param, return a string of correct format
@@ -293,12 +326,12 @@ async def on_message(message):
         # TODO: Parse JSON info into readable format and send to server
         # In Unix time format, measured in milliseconds
         # https://www.epochconverter.com
-        update_clash_lists()
+        await update_clash_lists()
         for clash in db["currentClashes"]:
-            registrationTime = datetime.fromtimestamp(clash['regTime']/1000.0).strftime('%Y-%m-%d %H:%M:%S.%f')
-            print(registrationTime)
+            registrationTime = datetime.fromtimestamp(clash['regTime']/1000.0).strftime('%H:%M')
+            clashDate = datetime.fromtimestamp(clash['regTime']/1000.0).strftime('%d %B')
             clashName = clash['nameKey'].title() + " " + clash['nameKeySecondary']
-            await message.channel.send(clashName + " is taking place at " + registrationTime + " at GMT +0")
+            await message.channel.send(clashName + " is taking place at " + registrationTime + "(GMT +0) on " + clashDate)
         
         #await message.channel.send(get_tournaments())
 
@@ -397,4 +430,5 @@ async def on_message(message):
         clear_all()
                            
 keep_alive()
+client.loop.create_task(update_clash_background_task())
 client.run(os.environ['DTOKEN'])
