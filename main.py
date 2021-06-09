@@ -5,6 +5,7 @@ import json
 from replit import db
 from keep_alive import keep_alive
 from replit import db
+from datetime import datetime
 
 client = discord.Client()
 
@@ -21,7 +22,7 @@ defaultServer = 'euw1'
 # in a given amount of time ("rate limiting").
 
 # discordTag always refers to the name#1234 format
-# discordUID is a long series of numbers that unqiuely identify every discord user (If they change their nickname and number this can still identify them)
+# discordUID is a long series of numbers that unqiuely identify every discord user (If they change their nickname and number, this can still identify them)
 
 #################
 ###### TODO #####
@@ -186,26 +187,34 @@ def get_tournaments():
 def update_current_clashes(apiClashes):
     """Compare Riot's list of current clashes to ours and update accordingly"""
     # Check if our currentClashes is up to date with Riot's
+    if "currentClashes" not in db.keys():
+        print("Current Clashes not in db")
+        db['currentClashes'] = []
+
     for apiEvent in apiClashes:
-        if apiEvent['id'] not in db["currentClashes"]:
-            db["currentClashes"].append(
-            {
+        if not any(d['id'] == apiEvent['id'] for d in db["currentClashes"]):
+            item = {
                 'id': apiEvent['id'],
                 'themeId': apiEvent['themeId'],
                 'nameKey': apiEvent['nameKey'],
                 'nameKeySecondary': apiEvent['nameKeySecondary'],
-                'cancelled': apiEvent['schedule']['cancelled']
+                'regTime': apiEvent['schedule'][0]['registrationTime'],
+                'startTime': apiEvent['schedule'][0]['startTime'],
+                'cancelled': apiEvent['schedule'][0]['cancelled']
             }
-        )
+            appendToDB("currentClashes", item)
 
 def update_past_clashes(apiClashes):
     """Moves all old tournaments from currentClashes to pastClashes"""
+    if "pastClashes" not in db.keys():
+        db["pastClashes"] = []
     for c in db["currentClashes"]:
     # If a clash id is in currentClashes but not Riot's apiClashses, move it to pastClashes
 
     # Horrible coding, but should work
     # For some reason, using range() gives an out of bounds exception
         if not any(d['id'] == c['id'] for d in apiClashes):
+            print("Moved to past clashes")
             db["pastClashes"].append(db["currentClashes"].pop(db["currentClashes"].index(c)))
 
 def update_clash_lists():
@@ -281,10 +290,17 @@ async def on_message(message):
 
     if msg.startswith("$tournaments") or msg.startswith("$t"):
         # Prints a parsed list of tournaments returned from Riots API
-        print(message.author)
         # TODO: Parse JSON info into readable format and send to server
-        # WTF is the riot time format
-        print(get_tournaments())
+        # In Unix time format, measured in milliseconds
+        # https://www.epochconverter.com
+        update_clash_lists()
+        for clash in db["currentClashes"]:
+            registrationTime = datetime.fromtimestamp(clash['regTime']/1000.0).strftime('%Y-%m-%d %H:%M:%S.%f')
+            print(registrationTime)
+            clashName = clash['nameKey'].title() + " " + clash['nameKeySecondary']
+            await message.channel.send(clashName + " is taking place at " + registrationTime + " at GMT +0")
+        
+        #await message.channel.send(get_tournaments())
 
     if msg.startswith("$register"):
         # Register a new player with a summonerName 
