@@ -191,7 +191,6 @@ async def update_current_clashes(apiClashes):
     # Check if our currentClashes is up to date with Riot's
     newClashFlag = False
     if "currentClashes" not in db.keys():
-        print("Current Clashes not in db")
         db['currentClashes'] = []
 
     for apiEvent in apiClashes:
@@ -206,9 +205,8 @@ async def update_current_clashes(apiClashes):
                 'startTime': apiEvent['schedule'][0]['startTime'],
                 'cancelled': apiEvent['schedule'][0]['cancelled']
             }
-            clashDate = datetime.fromtimestamp(item['regTime']/1000.0).strftime('%d-%B')
-            titleString = "clash-" + clashDate
-            await make_clash_channel(titleString)
+            
+            await make_clash_channel(item['regTime'])
             appendToDB("currentClashes", item)
     return newClashFlag
 
@@ -219,15 +217,19 @@ async def update_past_clashes(apiClashes):
     for c in db["currentClashes"]:
     # If a clash id is in currentClashes but not Riot's apiClashses, move it to pastClashes
 
-    # Horrible coding, but should work
-    # For some reason, using range() gives an out of bounds exception
         if not any(d['id'] == c['id'] for d in apiClashes):
-            print("Moved to past clashes")
+            remove_clash_channel(c['regTime'])
             db["pastClashes"].append(db["currentClashes"].pop(db["currentClashes"].index(c)))
 
-async def make_clash_channel(title):
-    """Makes a new channel for clash in the desired category. Does not create duplicate channels"""
+def get_title_from_reg_time(regTime):
+    clashDate = datetime.fromtimestamp(regTime/1000.0).strftime('%d-%B')
+    title = "clash-" + clashDate
     title = title.lower()
+    return title
+
+async def make_clash_channel(regTime):
+    """Makes a new channel for clash in the desired category. Does not create duplicate channels"""
+    title = get_title_from_reg_time(regTime)
     # Find the server object that corresponds with the main server name
     server = next(x for x in client.guilds if x.name == mainServer)
     # Find the category object that corresponds with the catergory we want channels in
@@ -235,6 +237,17 @@ async def make_clash_channel(title):
     # Don't create the channel if it already exists
     if not any(x.name == title for x in category.channels):
         channel = await server.create_text_channel(title, category=category)
+
+async def remove_clash_channel(regTime):
+    title = get_title_from_reg_time(regTime)
+    # Find the server object that corresponds with the main server name
+    server = next(x for x in client.guilds if x.name == mainServer)
+    # Find the category object that corresponds with the catergory we want channels in
+    category = next(x for x in server.categories if x.name == channelCategory)
+    # Don't create the channel if it already exists
+    for channel in category.channels:
+        if channel.name == title:
+            await channel.delete(reason="Old Clash Thread")
 
 async def update_clash_lists():
     """Checks the Riot API for new tournaments, adds them accordingly and moves old ones"""
@@ -285,6 +298,7 @@ def clear_owners_and_admins():
         print("Already Deleted Admins")
     
 def clear_all():
+
     clear_owners_and_admins()
     try:
         db.__delitem__("players")
@@ -310,10 +324,9 @@ def clear_all():
     except:
         print("Already Deleted Server Clashes")
 
-
 @client.event
 async def on_ready():
-    print('We have logged in as {0.user}'.format(client))
+    print(f'We have logged in as {client.user}')
 
 @client.event
 async def on_message(message):
