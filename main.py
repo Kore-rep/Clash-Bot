@@ -14,6 +14,8 @@ from riotwatcher import LolWatcher, ApiError
 
 lolWatcher = LolWatcher(os.environ['RTOKEN'])
 defaultServer = 'euw1'
+mainServer = "Test Server"
+channelCategory = "Upcoming events"
 # Docs:
 ### https://developer.riotgames.com/apis
 ### https://discord.com/developers/docs/intro
@@ -206,8 +208,7 @@ async def update_current_clashes(apiClashes):
             }
             clashDate = datetime.fromtimestamp(item['regTime']/1000.0).strftime('%d-%B')
             titleString = "clash-" + clashDate
-            await make_channel(titleString)
-            print(f"Making channel {titleString}")
+            await make_clash_channel(titleString)
             appendToDB("currentClashes", item)
     return newClashFlag
 
@@ -224,17 +225,23 @@ async def update_past_clashes(apiClashes):
             print("Moved to past clashes")
             db["pastClashes"].append(db["currentClashes"].pop(db["currentClashes"].index(c)))
 
-async def make_channel(title):
-    server = client.guilds[0]
-    #print(server.id)
-    category = server.categories[1]
-    #print(category)
-    channel = await server.create_text_channel(title, category=category)
-    #print(channel)
+async def make_clash_channel(title):
+    """Makes a new channel for clash in the desired category. Does not create duplicate channels"""
+    title = title.lower()
+    # Find the server object that corresponds with the main server name
+    server = next(x for x in client.guilds if x.name == mainServer)
+    # Find the category object that corresponds with the catergory we want channels in
+    category = next(x for x in server.categories if x.name == channelCategory)
+    # Don't create the channel if it already exists
+    if not any(x.name == title for x in category.channels):
+        channel = await server.create_text_channel(title, category=category)
 
 async def update_clash_lists():
     """Checks the Riot API for new tournaments, adds them accordingly and moves old ones"""
     apiClashes = get_tournaments()
+    # The data from Riot sometimes isn't in order
+    # This lambda function orders from soonest to furthest away
+    apiClashes = sorted(apiClashes, key = lambda i: i['schedule'][0]['registrationTime'])
     if await update_current_clashes(apiClashes):
         # Create new channels
         pass
@@ -330,10 +337,9 @@ async def on_message(message):
         for clash in db["currentClashes"]:
             registrationTime = datetime.fromtimestamp(clash['regTime']/1000.0).strftime('%H:%M')
             clashDate = datetime.fromtimestamp(clash['regTime']/1000.0).strftime('%d %B')
-            clashName = clash['nameKey'].title() + " " + clash['nameKeySecondary']
-            await message.channel.send(clashName + " is taking place at " + registrationTime + "(GMT +0) on " + clashDate)
+            clashName = clash['nameKey'].title() + " " + clash['nameKeySecondary'].replace("_", " ").title()
+            await message.channel.send(clashName + " is taking place at " + registrationTime + " (GMT +0) on " + clashDate)
         
-        #await message.channel.send(get_tournaments())
 
     if msg.startswith("$register"):
         # Register a new player with a summonerName 
@@ -426,7 +432,7 @@ async def on_message(message):
         else:
             await message.channel.send("Please use the following format: '$owner @discordUser'")
     
-    if msg.startswith("$clear"):
+    if msg.startswith("$clear"):        
         clear_all()
                            
 keep_alive()
