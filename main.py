@@ -49,8 +49,13 @@ def appendToDB(key, val):
     temp = db[key]
     temp.append(val)
     db[key] = temp
+
+def removeFromDB(key, val):
+    temp = db[key]
+    temp.remove(val)
+    db[key] = temp
     
-def owner_authorized(discordTag):
+def is_owner_authorized(discordTag):
     """Return true if a given discordTag is in botOwners I.E. has owner permissions"""
     #if linear_search(db["botOwners"], 'discordUID', discordUID) != -1:
     #    return True
@@ -72,7 +77,7 @@ def add_owner(discordTag, discordUID):
         db["botOwners"] = [newOwner]
     return "Successfully added " + discordTag[:-5] +  "'s owner status."
     
-def admin_authorized(discordTag):
+def is_admin_authorized(discordTag):
     """Return true if a given discordTag is in botAdmins I.E. has admin permissions"""
     #if linear_search(db["botAdmins"], 'discordUID', discordUID) != -1:
     #    return True
@@ -207,6 +212,7 @@ async def update_current_clashes(apiClashes):
             }
             
             await make_clash_channel(item['regTime'])
+            print("Made new channel")
             appendToDB("currentClashes", item)
     return newClashFlag
 
@@ -214,12 +220,22 @@ async def update_past_clashes(apiClashes):
     """Moves all old tournaments from currentClashes to pastClashes"""
     if "pastClashes" not in db.keys():
         db["pastClashes"] = []
+    print("Before:")
+    print(db["currentClashes"])
     for c in db["currentClashes"]:
+        
     # If a clash id is in currentClashes but not Riot's apiClashses, move it to pastClashes
 
         if not any(d['id'] == c['id'] for d in apiClashes):
-            remove_clash_channel(c['regTime'])
-            db["pastClashes"].append(db["currentClashes"].pop(db["currentClashes"].index(c)))
+            print("Removing channel")
+            await remove_clash_channel(c['regTime'])
+            removeFromDB("currentClashes", c)
+            appendToDB("pastClashes", c)
+            #db["pastClashes"].append(db["currentClashes"].pop(db["currentClashes"].index(c)))
+    print("\nAfter:")
+    print(db["currentClashes"])
+    print("\nPast Clashes:")
+    print(db["pastClashes"])
 
 def get_title_from_reg_time(regTime):
     clashDate = datetime.fromtimestamp(regTime/1000.0).strftime('%d-%B')
@@ -252,15 +268,12 @@ async def remove_clash_channel(regTime):
 async def update_clash_lists():
     """Checks the Riot API for new tournaments, adds them accordingly and moves old ones"""
     apiClashes = get_tournaments()
+    print(apiClashes)
     # The data from Riot sometimes isn't in order
     # This lambda function orders from soonest to furthest away
     apiClashes = sorted(apiClashes, key = lambda i: i['schedule'][0]['registrationTime'])
-    if await update_current_clashes(apiClashes):
-        # Create new channels
-        pass
-    if await update_past_clashes(apiClashes):
-        # Remove old channels
-        pass
+    await update_current_clashes(apiClashes)
+    await update_past_clashes(apiClashes)
 
 async def update_clash_background_task():
     """Every 500 seconds, check for new clash tournaments"""
@@ -375,7 +388,7 @@ async def on_message(message):
             nameToRemove = msgDetails[1]
             if nameToRemove == 'me':
                 nameToRemove = str(message.author)
-            if admin_authorized(message.author) or nameToRemove == str(message.author):
+            if is_admin_authorized(message.author) or nameToRemove == str(message.author):
                 await message.channel.send(remove_player(nameToRemove))
             else:
                 await message.channel.send(not_authorized('admin'))
@@ -389,7 +402,7 @@ async def on_message(message):
             if len(message.mentions) != 0:
                 discordTag = str(message.mentions[0])
                 discordUID = message.mentions[0].id
-                if admin_authorized(message.author.id):
+                if is_admin_authorized(message.author.id):
                     await message.channel.send(add_admin(discordTag, discordUID))
                 else:
                     await message.channel.send(not_authorized('admin'))
@@ -405,7 +418,7 @@ async def on_message(message):
                 discordTag = str(message.mentions[0])
             if msgDetails[1] == 'me':
                 discordTag = str(message.author)
-            if owner_authorized(message.author.id):
+            if is_owner_authorized(message.author.id):
                 await message.channel.send(remove_admin(discordTag))
             else:
                 await message.channel.send(not_authorized('owner'))  
@@ -436,7 +449,7 @@ async def on_message(message):
             if len(message.mentions) != 0:
                 discordTag = str(message.mentions[0])
                 discordUID = message.mentions[0].id
-                if owner_authorized(str(message.author)):
+                if is_owner_authorized(str(message.author)):
                     await message.channel.send(add_owner(discordTag, discordUID)) 
                 else:
                     await message.channel.send(not_authorized('owner'))
